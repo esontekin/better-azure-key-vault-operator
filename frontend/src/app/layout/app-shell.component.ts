@@ -286,6 +286,7 @@ interface FormDialogState {
       overflow: hidden;
       display: grid;
       grid-template-columns: 280px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
     }
     .workspace--drawer-open {
       grid-template-columns: 280px minmax(0, 1fr) 420px;

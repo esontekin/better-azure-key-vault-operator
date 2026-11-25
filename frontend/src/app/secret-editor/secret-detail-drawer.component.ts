@@ -269,8 +269,17 @@ export type DrawerTab = 'details' | 'versions';
     </aside>
   `,
   styles: `
-    .drawer {
+    :host {
+      display: flex;
+      flex-direction: column;
       height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .drawer {
+      flex: 1 1 0%;
+      height: 100%;
+      min-height: 0;
       background: #ffffff;
       border-left: 1px solid #e2e8f0;
       display: flex;
@@ -278,6 +287,7 @@ export type DrawerTab = 'details' | 'versions';
       overflow: hidden;
     }
     .drawer__header {
+      flex-shrink: 0;
       padding: 1rem 1.15rem;
       border-bottom: 1px solid #e2e8f0;
       display: flex;
@@ -306,6 +316,7 @@ export type DrawerTab = 'details' | 'versions';
       word-break: break-all;
     }
     .drawer__tabs {
+      flex-shrink: 0;
       display: flex;
       border-bottom: 1px solid #e2e8f0;
       padding: 0 1rem;
@@ -327,9 +338,11 @@ export type DrawerTab = 'details' | 'versions';
       border-bottom-color: #0f4c81;
     }
     .drawer__body {
-      flex: 1;
+      flex: 1 1 0%;
+      min-height: 0;
       overflow-y: auto;
-      padding: 1rem 1.15rem;
+      overscroll-behavior: contain;
+      padding: 1rem 1.15rem 1.5rem;
       display: flex;
       flex-direction: column;
       gap: 1rem;

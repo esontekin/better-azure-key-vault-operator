@@ -106,6 +106,14 @@ import { ErrorBannerComponent } from '../shared/error-banner.component';
     </section>
   `,
   styles: `
+    :host {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 0%;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
     .deleted-panel {
       display: flex;
       flex-direction: column;
@@ -114,6 +122,8 @@ import { ErrorBannerComponent } from '../shared/error-banner.component';
       border: 1px solid #e2e8f0;
       border-radius: 8px;
       padding: 1rem;
+      flex: 1 1 0%;
+      min-height: 0;
       height: 100%;
       overflow-y: auto;
     }
