@@ -127,6 +127,35 @@ paths:
         '502':
           $ref: '#/components/responses/UpstreamError'
 
+  /vaults/refresh:
+    post:
+      tags: [Discovery]
+      summary: Force refresh of Azure ARM and static Key Vault discovery cache and return authorized vaults
+      operationId: refreshVaults
+      parameters:
+        - name: subscriptionId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional subscription ID filter
+      responses:
+        '200':
+          description: Refreshed list of authorized vaults
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VaultDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
   /vaults/{id}/secrets:
     get:
       tags: [Secrets]

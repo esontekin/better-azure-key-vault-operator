@@ -67,17 +67,31 @@ export class VaultStore implements OnDestroy {
     this.stopPolling();
   }
 
-  async loadDiscovery(): Promise<void> {
+  async loadDiscovery(forceRefresh = false): Promise<void> {
     this.loadingVaults.set(true);
     this.error.set(null);
     try {
-      const [subs, vaults] = await Promise.all([
-        firstValueFrom(this.api.listSubscriptions()).catch(() => [] as SubscriptionDto[]),
-        firstValueFrom(this.api.listVaults()),
-      ]);
+      let vaults: VaultDto[];
+      let subs: SubscriptionDto[];
+      if (forceRefresh) {
+        // Force live ARM re-discovery on backend first so newly granted/deleted vaults appear immediately
+        vaults = await firstValueFrom(this.api.refreshVaults());
+        subs = await firstValueFrom(this.api.listSubscriptions()).catch(() => [] as SubscriptionDto[]);
+        void this.authStore.loadStatus();
+      } else {
+        [subs, vaults] = await Promise.all([
+          firstValueFrom(this.api.listSubscriptions()).catch(() => [] as SubscriptionDto[]),
+          firstValueFrom(this.api.listVaults()),
+        ]);
+      }
       this.subscriptions.set(subs);
       this.vaults.set(vaults);
       this.connected.set(true);
+
+      const selectedSub = this.selectedSubscriptionId();
+      if (selectedSub && !subs.some((s) => s.subscriptionId === selectedSub)) {
+        this.selectedSubscriptionId.set('');
+      }
 
       const currentId = this.selectedVaultId();
       if (currentId && !vaults.some((v) => v.id === currentId)) {
@@ -95,6 +109,10 @@ export class VaultStore implements OnDestroy {
     } finally {
       this.loadingVaults.set(false);
     }
+  }
+
+  async refreshDiscovery(): Promise<void> {
+    await this.loadDiscovery(true);
   }
 
   selectSubscription(subscriptionId: string): void {

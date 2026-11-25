@@ -18,9 +18,9 @@ import { EnvironmentBadgeComponent } from '../shared/environment-badge.component
           type="button"
           class="btn btn--ghost btn--xs"
           [disabled]="vaultStore.loadingVaults()"
-          (click)="vaultStore.loadDiscovery()"
+          (click)="vaultStore.refreshDiscovery()"
           [attr.aria-label]="i18n.t().secrets.refresh"
-          title="Refresh vaults"
+          [title]="i18n.t().secrets.refresh"
         >
           ↻
         </button>

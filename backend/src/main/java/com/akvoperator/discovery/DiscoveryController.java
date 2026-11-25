@@ -11,6 +11,7 @@ import com.akvoperator.vault.VaultRegistry;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -88,6 +89,38 @@ public class DiscoveryController {
                 null,
                 null,
                 "DISCOVERY_LIST_VAULTS",
+                correlationId
+        );
+
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(filtered);
+    }
+
+    @PostMapping("/vaults/refresh")
+    public ResponseEntity<List<VaultDto>> refreshVaults(
+            @RequestParam(name = "subscriptionId", required = false) String subscriptionId
+    ) {
+        AppPrincipal principal = vaultAuthorizationService.requireCurrentPrincipal();
+        String correlationId = CorrelationIdHolder.getOrGenerate();
+
+        vaultRegistry.refreshDiscovery();
+
+        List<VaultDescriptor> allVaults = vaultRegistry.listVaults();
+        List<VaultDto> authorizedVaults = vaultAuthorizationService.filterAuthorizedVaults(allVaults);
+
+        List<VaultDto> filtered = (subscriptionId != null && !subscriptionId.isBlank())
+                ? authorizedVaults.stream()
+                        .filter(v -> v.subscriptionId() != null && subscriptionId.trim().equalsIgnoreCase(v.subscriptionId()))
+                        .toList()
+                : authorizedVaults;
+
+        auditLogger.logSuccess(
+                principal.subject(),
+                null,
+                null,
+                null,
+                "DISCOVERY_REFRESH_VAULTS",
                 correlationId
         );
 

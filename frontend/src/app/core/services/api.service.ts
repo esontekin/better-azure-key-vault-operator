@@ -59,6 +59,17 @@ export class ApiService {
     });
   }
 
+  refreshVaults(subscriptionId?: string | null): Observable<VaultDto[]> {
+    let params = new HttpParams();
+    if (subscriptionId) {
+      params = params.set('subscriptionId', subscriptionId);
+    }
+    return this.http.post<VaultDto[]>(`${this.baseUrl}/vaults/refresh`, {}, {
+      params,
+      withCredentials: true,
+    });
+  }
+
   getSecretsSnapshot(vaultId: string): Observable<SecretListSnapshotResponse> {
     return this.http.get<SecretListSnapshotResponse>(
       `${this.baseUrl}/vaults/${encodeURIComponent(vaultId)}/secrets`,

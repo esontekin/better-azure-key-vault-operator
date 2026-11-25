@@ -77,4 +77,30 @@ class DiscoveryControllerTest {
         assertThat(response.getHeaders().getCacheControl()).contains("no-store");
         verify(auditLogger).logSuccess(eq("alice@example.com"), isNull(), isNull(), isNull(), eq("DISCOVERY_LIST_SUBSCRIPTIONS"), any());
     }
+
+    @Test
+    void refreshVaultsForcesRegistryRefreshFiltersByAuthorizationAndAudits() {
+        VaultRegistry registry = mock(VaultRegistry.class);
+        VaultAuthorizationService authService = mock(VaultAuthorizationService.class);
+        AuditLogger auditLogger = mock(AuditLogger.class);
+
+        AppPrincipal principal = new AppPrincipal("alice@example.com", "Alice", "https://idp.example.com", Set.of("ops"), false);
+        when(authService.requireCurrentPrincipal()).thenReturn(principal);
+
+        VaultDescriptor d1 = new VaultDescriptor("vlt_aaaaaaaaaaaaaaaaaaaaaaaa", "/sub/1/v1", "v1", "sub-1", "rg-1",
+                "westeurope", "https://v1.vault.azure.net", "dev", false, VaultSource.ARM_DISCOVERY);
+        when(registry.listVaults()).thenReturn(List.of(d1));
+
+        VaultDto dto1 = new VaultDto(d1.opaqueId(), d1.name(), d1.subscriptionId(), d1.resourceGroup(),
+                d1.location(), d1.vaultUri(), d1.environment(), d1.production(), d1.source(), Set.of(Permission.SECRET_LIST));
+        when(authService.filterAuthorizedVaults(List.of(d1))).thenReturn(List.of(dto1));
+
+        DiscoveryController controller = new DiscoveryController(registry, authService, auditLogger);
+
+        ResponseEntity<List<VaultDto>> response = controller.refreshVaults(null);
+        verify(registry).refreshDiscovery();
+        assertThat(response.getBody()).containsExactly(dto1);
+        assertThat(response.getHeaders().getCacheControl()).contains("no-store");
+        verify(auditLogger).logSuccess(eq("alice@example.com"), isNull(), isNull(), isNull(), eq("DISCOVERY_REFRESH_VAULTS"), any());
+    }
 }

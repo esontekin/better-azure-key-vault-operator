@@ -53,6 +53,12 @@ describe('ApiService REST contract', () => {
     expect(vaultReq.request.method).toBe('GET');
     vaultReq.flush([]);
 
+    service.refreshVaults().subscribe();
+    const refreshVaultsReq = httpMock.expectOne('/api/v1/vaults/refresh');
+    expect(refreshVaultsReq.request.method).toBe('POST');
+    expect(refreshVaultsReq.request.withCredentials).toBe(true);
+    refreshVaultsReq.flush([]);
+
     service.getSecretsSnapshot('vault_opaque_1').subscribe();
     const snapReq = httpMock.expectOne('/api/v1/vaults/vault_opaque_1/secrets');
     expect(snapReq.request.method).toBe('GET');
