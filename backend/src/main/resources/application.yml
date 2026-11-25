@@ -1,0 +1,86 @@
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${SERVER_PORT:8765}
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+    include-exception: false
+  servlet:
+    session:
+      timeout: 15m
+      tracking-modes: cookie
+      cookie:
+        name: AKV_SESSION
+        http-only: true
+        same-site: strict
+        path: /
+  tomcat:
+    max-swallow-size: 256KB
+    max-http-form-post-size: 256KB
+
+spring:
+  application:
+    name: azure-key-vault-operator
+  main:
+    banner-mode: off
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  mvc:
+    problemdetails:
+      enabled: true
+
+management:
+  endpoints:
+    enabled-by-default: false
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      enabled: true
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+
+app:
+  profile: ${APP_PROFILE:local}
+  delete-enabled: ${APP_DELETE_ENABLED:false}
+  metadata-ttl: ${APP_METADATA_TTL:5m}
+  allowed-vault-ids: ${APP_ALLOWED_VAULT_IDS:}
+  azure:
+    tenant-id: ${AZURE_TENANT_ID:}
+    client-id: ${AZURE_CLIENT_ID:}
+    client-secret: ${AZURE_CLIENT_SECRET:}
+    client-secret-file: ${AZURE_CLIENT_SECRET_FILE:}
+    subscription-id: ${AZURE_SUBSCRIPTION_ID:}
+    public-cloud-only: true
+    connect-timeout: 10s
+    response-timeout: 30s
+    max-read-retries: 3
+  local:
+    bootstrap-token-ttl: 10m
+    idle-timeout: 15m
+    allow-container-bind: ${APP_LOCAL_ALLOW_CONTAINER_BIND:false}
+    bootstrap-token-auto-print: true
+    allowed-hosts:
+      - localhost
+      - 127.0.0.1
+      - "[::1]"
+  server:
+    public-base-url: ${APP_SERVER_PUBLIC_BASE_URL:}
+    trusted-proxies: ${APP_SERVER_TRUSTED_PROXIES:}
+    oidc-issuer-uri: ${OIDC_ISSUER_URI:}
+    oidc-client-id: ${OIDC_CLIENT_ID:}
+    oidc-client-secret: ${OIDC_CLIENT_SECRET:}
+    role-mappings-json: ${APP_SERVER_ROLE_MAPPINGS_JSON:}
+    groups-claim: ${APP_SERVER_GROUPS_CLAIM:groups}
+    subject-claim: ${APP_SERVER_SUBJECT_CLAIM:sub}
+  cache:
+    max-vault-entries: 200
+  security:
+    rate-limit-per-minute: 240
+    bootstrap-rate-limit-per-minute: 10
+    max-request-body-bytes: 131072

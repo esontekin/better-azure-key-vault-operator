@@ -1,0 +1,13 @@
+Azure Key Vault Manager has been deployed as a single-replica release: {{ .Release.Name }}
+
+Required security checklist before exposing traffic:
+1. Ensure TWO SEPARATE Kubernetes Secrets exist in namespace '{{ .Release.Namespace }}':
+   - Azure Service Principal Secret (azure.existingSecret): holds key '{{ .Values.azure.secretKey }}'
+   - OIDC Client Secret (oidc.existingSecret): holds keys '{{ .Values.oidc.clientIdKey }}' and '{{ .Values.oidc.clientSecretKey }}'
+2. Ensure APP_ALLOWED_VAULT_IDS (allowedVaultIds), server.publicBaseUrl (https://...),
+   server.oidcIssuerUri (https://...), server.trustedProxies, and server.roleMappingsJson are configured.
+   Missing server-profile configuration causes intentional fail-closed startup failure.
+3. Configure centralized, access-controlled log/audit collection (e.g. Fluent Bit -> Elasticsearch/OpenSearch)
+   filtering on logType="audit" with defined retention. Local pod stdout is NOT immutable audit storage.
+4. Keep ingress disabled unless TLS termination and trusted proxy CIDR enforcement are active.
+5. Do NOT scale replicas above 1 in MVP; multi-replica requires distributed session and audit architecture.

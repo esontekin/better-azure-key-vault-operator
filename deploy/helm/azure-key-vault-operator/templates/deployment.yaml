@@ -1,0 +1,163 @@
+{{- if ne (int .Values.replicaCount) 1 }}
+{{- fail "MVP supports single replica only (replicaCount must be 1) until distributed session and audit architecture is implemented." }}
+{{- end }}
+{{- if and .Values.azure.existingSecret .Values.oidc.existingSecret (eq .Values.azure.existingSecret .Values.oidc.existingSecret) }}
+{{- fail "azure.existingSecret and oidc.existingSecret must reference separate Kubernetes Secrets." }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "akv-operator.fullname" . }}
+  labels:
+    {{- include "akv-operator.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "akv-operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "akv-operator.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "akv-operator.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          env:
+            - name: APP_PROFILE
+              value: {{ .Values.profile | quote }}
+            - name: SERVER_ADDRESS
+              value: "0.0.0.0"
+            - name: SERVER_PORT
+              value: "8765"
+            - name: APP_DELETE_ENABLED
+              value: {{ .Values.deleteEnabled | quote }}
+            - name: APP_METADATA_TTL
+              value: {{ .Values.metadataTtl | quote }}
+            - name: APP_LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            {{- if .Values.allowedVaultIds }}
+            - name: APP_ALLOWED_VAULT_IDS
+              value: {{ join "," .Values.allowedVaultIds | quote }}
+            {{- end }}
+            {{- if .Values.azure.tenantId }}
+            - name: AZURE_TENANT_ID
+              value: {{ .Values.azure.tenantId | quote }}
+            {{- end }}
+            {{- if .Values.azure.clientId }}
+            - name: AZURE_CLIENT_ID
+              value: {{ .Values.azure.clientId | quote }}
+            {{- end }}
+            {{- if .Values.azure.subscriptionId }}
+            - name: AZURE_SUBSCRIPTION_ID
+              value: {{ .Values.azure.subscriptionId | quote }}
+            {{- end }}
+            {{- if .Values.azure.existingSecret }}
+            - name: AZURE_CLIENT_SECRET_FILE
+              value: {{ printf "/run/secrets/azure/%s" .Values.azure.secretKey | quote }}
+            {{- end }}
+            {{- if .Values.server.publicBaseUrl }}
+            - name: APP_SERVER_PUBLIC_BASE_URL
+              value: {{ .Values.server.publicBaseUrl | quote }}
+            {{- end }}
+            {{- if .Values.server.trustedProxies }}
+            - name: APP_SERVER_TRUSTED_PROXIES
+              value: {{ .Values.server.trustedProxies | quote }}
+            {{- end }}
+            {{- if .Values.server.oidcIssuerUri }}
+            - name: OIDC_ISSUER_URI
+              value: {{ .Values.server.oidcIssuerUri | quote }}
+            {{- end }}
+            {{- if .Values.oidc.existingSecret }}
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.existingSecret | quote }}
+                  key: {{ .Values.oidc.clientIdKey | quote }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.existingSecret | quote }}
+                  key: {{ .Values.oidc.clientSecretKey | quote }}
+            {{- end }}
+            {{- if .Values.server.roleMappingsJson }}
+            - name: APP_SERVER_ROLE_MAPPINGS_JSON
+              value: {{ .Values.server.roleMappingsJson | quote }}
+            {{- end }}
+            - name: APP_SERVER_GROUPS_CLAIM
+              value: {{ .Values.server.groupsClaim | quote }}
+            - name: APP_SERVER_SUBJECT_CLAIM
+              value: {{ .Values.server.subjectClaim | quote }}
+            {{- range $idx, $vault := .Values.staticVaults }}
+            - name: {{ printf "APP_STATIC_VAULTS_%d_RESOURCE_ID" $idx }}
+              value: {{ $vault.resourceId | quote }}
+            - name: {{ printf "APP_STATIC_VAULTS_%d_VAULT_URI" $idx }}
+              value: {{ $vault.vaultUri | quote }}
+            {{- if $vault.environment }}
+            - name: {{ printf "APP_STATIC_VAULTS_%d_ENVIRONMENT" $idx }}
+              value: {{ $vault.environment | quote }}
+            {{- end }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.azure.existingSecret }}
+            - name: azure-sp-secret
+              mountPath: /run/secrets/azure
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpVolumeSizeLimit }}
+        {{- if .Values.azure.existingSecret }}
+        - name: azure-sp-secret
+          secret:
+            secretName: {{ .Values.azure.existingSecret | quote }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.azure.secretKey | quote }}
+                path: {{ .Values.azure.secretKey | quote }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

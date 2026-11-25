@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <property name="APP_LOG_LEVEL" value="${APP_LOG_LEVEL:-INFO}"/>
+
+    <!-- Standard application console appender (never logs secret values or tokens) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <timeZone>UTC</timeZone>
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <customFields>{"service":"azure-key-vault-operator","logType":"application"}</customFields>
+        </encoder>
+    </appender>
+
+    <!-- Structured Elasticsearch-compatible JSON audit appender -->
+    <appender name="AUDIT_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <timeZone>UTC</timeZone>
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <customFields>{"service":"azure-key-vault-operator","logType":"audit"}</customFields>
+            <fieldNames>
+                <timestamp>@timestamp</timestamp>
+                <version>[ignore]</version>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+        </encoder>
+    </appender>
+
+    <logger name="AUDIT" level="INFO" additivity="false">
+        <appender-ref ref="AUDIT_JSON"/>
+    </logger>
+
+    <!-- Keep Azure SDK HTTP body logging strictly disabled -->
+    <logger name="com.azure" level="WARN"/>
+    <logger name="reactor.netty" level="WARN"/>
+    <logger name="org.springframework.security" level="WARN"/>
+    <logger name="com.akvoperator" level="${APP_LOG_LEVEL}"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

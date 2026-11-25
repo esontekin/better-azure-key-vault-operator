@@ -1,0 +1,59 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "akv-operator.fullname" . }}
+  labels:
+    {{- include "akv-operator.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "akv-operator.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- if or .Values.networkPolicy.ingressNamespaceSelector .Values.networkPolicy.ingressPodSelector }}
+        - {{- if .Values.networkPolicy.ingressNamespaceSelector }}
+          namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+          {{- end }}
+          {{- if .Values.networkPolicy.ingressPodSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressPodSelector | nindent 14 }}
+          {{- end }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8765
+  egress:
+    # DNS resolution (CoreDNS / kube-dns)
+    - {{- if .Values.networkPolicy.egressDnsCidrs }}
+      to:
+        {{- range .Values.networkPolicy.egressDnsCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Outbound HTTPS to Entra ID, Azure ARM, Azure Key Vault, and OIDC Issuer
+    - {{- if .Values.networkPolicy.egressHttpsCidrs }}
+      to:
+        {{- range .Values.networkPolicy.egressHttpsCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

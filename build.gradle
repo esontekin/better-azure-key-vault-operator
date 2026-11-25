@@ -1,0 +1,78 @@
+import org.apache.tools.ant.taskdefs.condition.Os
+
+plugins {
+    id 'base'
+}
+
+allprojects {
+    group = 'com.akvoperator'
+    version = '1.0.0'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+def npmCmd = Os.isFamily(Os.FAMILY_WINDOWS) ? 'npm.cmd' : 'npm'
+def frontendDir = file("${rootDir}/frontend")
+def frontendDistDir = file("${rootDir}/frontend/dist/akv-manager/browser")
+def backendStaticDir = file("${rootDir}/backend/src/main/resources/static")
+def skipFrontendBuild = providers.gradleProperty('skipFrontendBuild').map { it.toBoolean() }.orElse(false)
+
+tasks.register('npmInstall', Exec) {
+    group = 'frontend'
+    description = 'Install frontend npm dependencies using lockfile'
+    workingDir = frontendDir
+    onlyIf { !skipFrontendBuild.get() && frontendDir.exists() && file("${frontendDir}/package.json").exists() }
+    inputs.file("${frontendDir}/package.json")
+    if (file("${frontendDir}/package-lock.json").exists()) {
+        inputs.file("${frontendDir}/package-lock.json")
+        commandLine npmCmd, 'ci', '--no-audit', '--no-fund'
+    } else {
+        commandLine npmCmd, 'install', '--no-audit', '--no-fund'
+    }
+    outputs.dir("${frontendDir}/node_modules")
+}
+
+tasks.register('buildFrontend', Exec) {
+    group = 'frontend'
+    description = 'Build Angular production bundle'
+    dependsOn 'npmInstall'
+    workingDir = frontendDir
+    onlyIf { !skipFrontendBuild.get() && frontendDir.exists() && file("${frontendDir}/package.json").exists() }
+    inputs.dir("${frontendDir}/src")
+    inputs.file("${frontendDir}/angular.json")
+    inputs.file("${frontendDir}/package.json")
+    inputs.file("${frontendDir}/tsconfig.json")
+    inputs.file("${frontendDir}/tsconfig.app.json")
+    outputs.dir(frontendDistDir)
+    commandLine npmCmd, 'run', 'build', '--', '--configuration', 'production'
+}
+
+tasks.register('copyFrontendToBackend', Sync) {
+    group = 'frontend'
+    description = 'Copy compiled Angular production assets into backend static resources'
+    dependsOn 'buildFrontend'
+    onlyIf { !skipFrontendBuild.get() && frontendDistDir.exists() }
+    from(frontendDistDir)
+    into(backendStaticDir)
+}
+
+tasks.register('testFrontend', Exec) {
+    group = 'verification'
+    description = 'Run Angular unit/contract tests'
+    dependsOn 'npmInstall'
+    workingDir = frontendDir
+    onlyIf { !skipFrontendBuild.get() && frontendDir.exists() && file("${frontendDir}/package.json").exists() }
+    commandLine npmCmd, 'run', 'test:ci'
+}
+
+tasks.register('bootJar') {
+    group = 'build'
+    description = 'Build executable fat JAR containing backend and Angular frontend'
+    dependsOn 'copyFrontendToBackend', ':backend:bootJar'
+}
+
+tasks.named('check') {
+    dependsOn ':backend:check'
+}

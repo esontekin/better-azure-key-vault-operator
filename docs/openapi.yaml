@@ -1,0 +1,785 @@
+openapi: 3.1.0
+info:
+  title: Azure Key Vault Manager API
+  version: 1.0.0
+  description: |
+    Self-hosted Azure Key Vault Secrets management REST API.
+    All endpoints operate on same-origin authenticated sessions behind Spring Security.
+    Azure credentials, access tokens, and client secrets are never returned in any API response.
+    Permanent purge operations are intentionally excluded from this contract.
+servers:
+  - url: /api/v1
+    description: Same-origin application server
+
+security:
+  - sessionCookie: []
+
+tags:
+  - name: Auth
+    description: Session status, local bootstrap authentication, and logout
+  - name: Discovery
+    description: Authorized Azure subscriptions and Key Vaults
+  - name: Secrets
+    description: Metadata snapshot, background refresh, CRUD, and version history
+  - name: DeletedSecrets
+    description: Soft-deleted secrets listing and asynchronous recovery
+  - name: Operations
+    description: Scoped asynchronous long-running operation status
+
+paths:
+  /auth/status:
+    get:
+      tags: [Auth]
+      summary: Get authenticated principal, active profile, CSRF readiness, and vault permissions
+      operationId: getAuthStatus
+      security: []
+      responses:
+        '200':
+          description: Current authentication status (never includes credentials or tokens)
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatusResponse'
+
+  /auth/bootstrap:
+    post:
+      tags: [Auth]
+      summary: Exchange one-time local bootstrap token for an authenticated session (local profile only)
+      operationId: localBootstrapLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapLoginRequest'
+      responses:
+        '200':
+          description: Session authenticated with rotated session ID
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate current session and clear session cookie
+      operationId: logout
+      responses:
+        '204':
+          description: Logged out successfully
+
+  /subscriptions:
+    get:
+      tags: [Discovery]
+      summary: List Azure subscriptions containing at least one vault authorized for the current user
+      operationId: listSubscriptions
+      responses:
+        '200':
+          description: Authorized subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubscriptionDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /vaults:
+    get:
+      tags: [Discovery]
+      summary: List authorized Key Vaults with opaque vault IDs and effective user permissions
+      operationId: listVaults
+      parameters:
+        - name: subscriptionId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional subscription ID filter
+      responses:
+        '200':
+          description: Authorized vaults
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VaultDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /vaults/{id}/secrets:
+    get:
+      tags: [Secrets]
+      summary: Get current metadata snapshot and progressive pagination status (never returns secret values)
+      operationId: getSecretsSnapshot
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      responses:
+        '200':
+          description: Current metadata snapshot and sync progress
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretListSnapshotResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Secrets]
+      summary: Create a new secret (requires MANAGER or ADMIN)
+      operationId: createSecret
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecretRequest'
+      responses:
+        '201':
+          description: Created secret metadata (value not returned)
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadataDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /vaults/{id}/refresh:
+    post:
+      tags: [Secrets]
+      summary: Trigger or coalesce background multi-page metadata refresh for the vault
+      operationId: refreshVaultSecrets
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      responses:
+        '202':
+          description: Refresh accepted or coalesced into active refresh
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretListSnapshotResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{id}/secrets/{name}:
+    get:
+      tags: [Secrets]
+      summary: Get metadata for a single secret (never returns secret value)
+      operationId: getSecretMetadata
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/SecretName'
+      responses:
+        '200':
+          description: Secret metadata
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadataDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Secrets]
+      summary: Create a new secret version with optimistic version check (requires MANAGER or ADMIN)
+      operationId: updateSecretValue
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/SecretName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecretRequest'
+      responses:
+        '200':
+          description: Updated secret metadata for new version
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadataDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      tags: [Secrets]
+      summary: Initiate soft-delete for all versions of a secret (requires ADMIN and APP_DELETE_ENABLED=true)
+      operationId: softDeleteSecret
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/SecretName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteSecretRequest'
+      responses:
+        '202':
+          description: Soft-delete operation initiated and tracked asynchronously
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vaults/{id}/secrets/{name}/reveal:
+    post:
+      tags: [Secrets]
+      summary: Explicitly reveal latest or specified secret version value (requires OPERATOR, MANAGER, or ADMIN)
+      operationId: revealSecret
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/SecretName'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevealSecretRequest'
+      responses:
+        '200':
+          description: Revealed secret value (strictly Cache-Control no-store)
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretValueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /vaults/{id}/secrets/{name}/properties:
+    patch:
+      tags: [Secrets]
+      summary: Update metadata properties for latest or specific secret version (requires MANAGER or ADMIN)
+      operationId: updateSecretProperties
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/SecretName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecretPropertiesRequest'
+      responses:
+        '200':
+          description: Updated secret version metadata
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadataDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{id}/secrets/{name}/versions:
+    get:
+      tags: [Secrets]
+      summary: List all versions of a secret across all continuation pages (metadata only, no values)
+      operationId: listSecretVersions
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/SecretName'
+      responses:
+        '200':
+          description: Complete list of secret version metadata
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SecretVersionDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{id}/deleted-secrets:
+    get:
+      tags: [DeletedSecrets]
+      summary: List soft-deleted secrets in the vault (requires ADMIN)
+      operationId: listDeletedSecrets
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+      responses:
+        '200':
+          description: Soft-deleted secrets metadata
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeletedSecretDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vaults/{id}/deleted-secrets/{name}/recover:
+    post:
+      tags: [DeletedSecrets]
+      summary: Initiate asynchronous recovery of a soft-deleted secret (requires ADMIN)
+      operationId: recoverDeletedSecret
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/SecretName'
+      responses:
+        '202':
+          description: Recovery operation initiated
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /operations/{id}:
+    get:
+      tags: [Operations]
+      summary: Poll status of an asynchronous delete or recover operation (enforces principal + vault scope)
+      operationId: getOperationStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Operation status
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: AKV_SESSION
+
+  parameters:
+    VaultId:
+      name: id
+      in: path
+      required: true
+      description: Backend-generated opaque vault identifier
+      schema:
+        type: string
+        pattern: '^[a-zA-Z0-9_-]{8,64}$'
+    SecretName:
+      name: name
+      in: path
+      required: true
+      description: Azure Key Vault secret name (1-127 alphanumeric or hyphen)
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 127
+        pattern: '^[0-9a-zA-Z-]+$'
+
+  responses:
+    BadRequest:
+      description: Validation or request error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    Unauthorized:
+      description: Application authentication required or Azure service principal authentication error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    Forbidden:
+      description: Insufficient application or Azure permission
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    NotFound:
+      description: Resource not found or not accessible
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    Conflict:
+      description: Resource conflict or concurrent modification detected
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    TooManyRequests:
+      description: Rate limited or Azure Key Vault throttled
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    UpstreamError:
+      description: Upstream Azure or network failure
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+
+  schemas:
+    Role:
+      type: string
+      enum: [VIEWER, OPERATOR, MANAGER, ADMIN]
+    Permission:
+      type: string
+      enum: [SECRET_LIST, SECRET_REVEAL, SECRET_WRITE, SECRET_DELETE_RECOVER]
+    SyncStatus:
+      type: string
+      enum: [IDLE, LOADING, COMPLETE, PARTIAL_ERROR, ERROR]
+    OperationState:
+      type: string
+      enum: [PENDING, IN_PROGRESS, SUCCEEDED, FAILED]
+
+    AuthStatusResponse:
+      type: object
+      required: [authenticated, profile, deleteEnabled, permissionsByVault]
+      properties:
+        authenticated: { type: boolean }
+        subject: { type: string, nullable: true }
+        displayName: { type: string, nullable: true }
+        profile: { type: string, enum: [local, server] }
+        authMode: { type: string, enum: [BOOTSTRAP_TOKEN, OIDC] }
+        oidcLoginUrl: { type: string, nullable: true }
+        deleteEnabled: { type: boolean }
+        idleTimeoutSeconds: { type: integer }
+        permissionsByVault:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/Permission' }
+
+    BootstrapLoginRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 256
+
+    SubscriptionDto:
+      type: object
+      required: [subscriptionId, displayName]
+      properties:
+        subscriptionId: { type: string }
+        displayName: { type: string }
+        state: { type: string, nullable: true }
+
+    VaultDto:
+      type: object
+      required: [id, name, vaultUri, environment, source, permissions]
+      properties:
+        id: { type: string, description: Opaque vault identifier }
+        name: { type: string }
+        subscriptionId: { type: string, nullable: true }
+        resourceGroup: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        vaultUri: { type: string, format: uri }
+        environment: { type: string, description: 'Environment label e.g. prod, staging, dev, unknown' }
+        production: { type: boolean }
+        source: { type: string, enum: [ARM_DISCOVERY, STATIC_CONFIG] }
+        permissions:
+          type: array
+          items: { $ref: '#/components/schemas/Permission' }
+
+    SecretMetadataDto:
+      type: object
+      required: [name, enabled]
+      properties:
+        name: { type: string }
+        version: { type: string, nullable: true }
+        enabled: { type: boolean }
+        createdOn: { type: string, format: date-time, nullable: true }
+        updatedOn: { type: string, format: date-time, nullable: true }
+        expiresOn: { type: string, format: date-time, nullable: true }
+        notBefore: { type: string, format: date-time, nullable: true }
+        contentType: { type: string, nullable: true }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        managed: { type: boolean }
+
+    SecretListSnapshotResponse:
+      type: object
+      required: [vaultId, status, generationId, loadedCount, pagesLoaded, stale, items]
+      properties:
+        vaultId: { type: string }
+        status: { $ref: '#/components/schemas/SyncStatus' }
+        generationId: { type: integer, format: int64 }
+        loadedCount: { type: integer }
+        pagesLoaded: { type: integer }
+        stale: { type: boolean }
+        lastSuccessfulSyncAt: { type: string, format: date-time, nullable: true }
+        lastAttemptAt: { type: string, format: date-time, nullable: true }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SecretMetadataDto' }
+
+    RevealSecretRequest:
+      type: object
+      properties:
+        version: { type: string, nullable: true }
+
+    SecretValueResponse:
+      type: object
+      required: [name, value]
+      properties:
+        name: { type: string }
+        version: { type: string, nullable: true }
+        value: { type: string }
+        contentType: { type: string, nullable: true }
+        updatedOn: { type: string, format: date-time, nullable: true }
+
+    CreateSecretRequest:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 127
+          pattern: '^[0-9a-zA-Z-]+$'
+        value:
+          type: string
+          description: Raw secret value (not trimmed; validated <= 25,600 UTF-8 bytes)
+        enabled: { type: boolean, default: true }
+        contentType: { type: string, maxLength: 255, nullable: true }
+        expiresOn: { type: string, format: date-time, nullable: true }
+        notBefore: { type: string, format: date-time, nullable: true }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+
+    UpdateSecretRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+          description: New secret version value (not trimmed; validated <= 25,600 UTF-8 bytes)
+        expectedLatestVersion:
+          type: string
+          nullable: true
+          description: Latest version ID observed when editing began (non-atomic optimistic check)
+        preserveMetadata:
+          type: boolean
+          default: true
+        enabled: { type: boolean, nullable: true }
+        contentType: { type: string, maxLength: 255, nullable: true }
+        expiresOn: { type: string, format: date-time, nullable: true }
+        notBefore: { type: string, format: date-time, nullable: true }
+        tags:
+          type: object
+          nullable: true
+          additionalProperties: { type: string }
+
+    UpdateSecretPropertiesRequest:
+      type: object
+      properties:
+        version: { type: string, nullable: true }
+        enabled: { type: boolean, nullable: true }
+        contentType: { type: string, maxLength: 255, nullable: true }
+        expiresOn: { type: string, format: date-time, nullable: true }
+        notBefore: { type: string, format: date-time, nullable: true }
+        clearExpiresOn: { type: boolean, default: false }
+        clearNotBefore: { type: boolean, default: false }
+        tags:
+          type: object
+          nullable: true
+          additionalProperties: { type: string }
+
+    SecretVersionDto:
+      type: object
+      required: [version, enabled]
+      properties:
+        version: { type: string }
+        enabled: { type: boolean }
+        createdOn: { type: string, format: date-time, nullable: true }
+        updatedOn: { type: string, format: date-time, nullable: true }
+        expiresOn: { type: string, format: date-time, nullable: true }
+        notBefore: { type: string, format: date-time, nullable: true }
+        contentType: { type: string, nullable: true }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        latest: { type: boolean }
+
+    DeleteSecretRequest:
+      type: object
+      required: [confirmSecretName]
+      properties:
+        confirmSecretName:
+          type: string
+          description: Must exactly match the secret name in the path
+
+    DeletedSecretDto:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        deletedOn: { type: string, format: date-time, nullable: true }
+        scheduledPurgeDate: { type: string, format: date-time, nullable: true }
+        recoveryId: { type: string, nullable: true }
+        enabled: { type: boolean, nullable: true }
+        contentType: { type: string, nullable: true }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+
+    OperationStatusResponse:
+      type: object
+      required: [operationId, vaultId, secretName, operationType, state, createdAt, updatedAt]
+      properties:
+        operationId: { type: string }
+        vaultId: { type: string }
+        secretName: { type: string }
+        operationType: { type: string, enum: [SOFT_DELETE, RECOVER] }
+        state: { $ref: '#/components/schemas/OperationState' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+
+    ProblemDetail:
+      type: object
+      description: RFC 9457 Problem Details
+      required: [type, title, status, detail, errorCode, correlationId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errorCode: { type: string }
+        correlationId: { type: string }
+        retryAfterSeconds: { type: integer, nullable: true }
+        fieldErrors:
+          type: object
+          additionalProperties: { type: string }

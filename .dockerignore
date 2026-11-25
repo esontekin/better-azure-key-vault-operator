@@ -1,0 +1,36 @@
+# Version control and secrets
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Local build outputs and caches
+.gradle/
+build/
+backend/build/
+backend/src/main/resources/static/
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+
+# Docs, IDE, and deployment manifests not needed inside image
+.idea/
+.vscode/
+docs/
+deploy/
+scripts/
+*.log
+README.md
+SECURITY.md
+TASKS.md
+AGENTS.md
+compose.yaml

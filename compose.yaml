@@ -1,0 +1,66 @@
+# Azure Key Vault Manager — Local Hardened Container Compose
+#
+# Security guarantees:
+# - Publishes ONLY to host loopback (127.0.0.1:8765), never 0.0.0.0 on host.
+# - Explicitly enables container bind exception (APP_LOCAL_ALLOW_CONTAINER_BIND=true)
+#   so the container can listen on 0.0.0.0 inside its isolated namespace while
+#   HostOriginValidationFilter still enforces localhost/127.0.0.1/[::1] Host headers.
+# - Runs as non-root UID/GID 10001 with read-only root filesystem, /tmp tmpfs,
+#   all Linux capabilities dropped, and no-new-privileges enabled.
+#
+# Secret input (choose EXACTLY ONE; providing both causes fail-closed startup error):
+#   Option A (preferred): Mount a restricted secret file to /run/secrets/azure_client_secret
+#                         and set AZURE_CLIENT_SECRET_FILE=/run/secrets/azure_client_secret
+#   Option B:             Set AZURE_CLIENT_SECRET in your local untracked .env file
+#
+# Server mode (APP_PROFILE=server):
+#   Do NOT expose this compose file directly to external networks in server mode.
+#   Server mode requires a TLS-terminating HTTPS reverse proxy (e.g. Envoy/Nginx/Ingress),
+#   OIDC provider (e.g. Ory Hydra), APP_ALLOWED_VAULT_IDS, APP_SERVER_PUBLIC_BASE_URL,
+#   APP_SERVER_TRUSTED_PROXIES, APP_SERVER_ROLE_MAPPINGS_JSON, and a centralized audit sink.
+#   See deploy/helm/azure-key-vault-operator/ and README.md for production server deployment.
+
+services:
+  akv-operator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: azure-key-vault-operator:1.0.0
+    container_name: azure-key-vault-operator-local
+    restart: "no"
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      APP_PROFILE: "local"
+      SERVER_ADDRESS: "0.0.0.0"
+      SERVER_PORT: "8765"
+      APP_LOCAL_ALLOW_CONTAINER_BIND: "true"
+      APP_DELETE_ENABLED: "${APP_DELETE_ENABLED:-false}"
+      APP_METADATA_TTL: "${APP_METADATA_TTL:-5m}"
+      AZURE_TENANT_ID: "${AZURE_TENANT_ID:?AZURE_TENANT_ID is required}"
+      AZURE_CLIENT_ID: "${AZURE_CLIENT_ID:?AZURE_CLIENT_ID is required}"
+      # Provide ONLY ONE of AZURE_CLIENT_SECRET or AZURE_CLIENT_SECRET_FILE
+      AZURE_CLIENT_SECRET: "${AZURE_CLIENT_SECRET:-}"
+      AZURE_CLIENT_SECRET_FILE: "${AZURE_CLIENT_SECRET_FILE:-}"
+      AZURE_SUBSCRIPTION_ID: "${AZURE_SUBSCRIPTION_ID:-}"
+      APP_ALLOWED_VAULT_IDS: "${APP_ALLOWED_VAULT_IDS:-}"
+    # Uncomment for Option A (recommended mounted secret file):
+    # volumes:
+    #   - type: bind
+    #     source: ./secrets/azure_client_secret
+    #     target: /run/secrets/azure_client_secret
+    #     read_only: true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8765/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 25s
+      retries: 3

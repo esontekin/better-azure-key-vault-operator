@@ -1,0 +1,69 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.16'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+ext {
+    azureSdkBomVersion = '1.3.9'
+    azureArmKeyVaultVersion = '2.57.1'
+    azureArmResourcesVersion = '2.56.1'
+    caffeineVersion = '3.2.0'
+    logstashEncoderVersion = '8.0'
+    wiremockVersion = '3.13.0'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "com.azure:azure-sdk-bom:${azureSdkBomVersion}"
+    }
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    implementation 'com.azure:azure-identity'
+    implementation 'com.azure:azure-security-keyvault-secrets'
+    implementation "com.azure.resourcemanager:azure-resourcemanager-keyvault:${azureArmKeyVaultVersion}"
+    implementation "com.azure.resourcemanager:azure-resourcemanager-resources:${azureArmResourcesVersion}"
+
+    implementation "com.github.ben-manes.caffeine:caffeine:${caffeineVersion}"
+    implementation "net.logstash.logback:logstash-logback-encoder:${logstashEncoderVersion}"
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation "org.wiremock:wiremock-standalone:${wiremockVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('processResources') {
+    mustRunAfter rootProject.tasks.named('copyFrontendToBackend')
+}
+
+tasks.named('bootJar') {
+    archiveFileName = 'azure-key-vault-operator.jar'
+    mustRunAfter rootProject.tasks.named('copyFrontendToBackend')
+}
+
+tasks.named('jar') {
+    enabled = false
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    jvmArgs '-XX:+EnableDynamicAgentLoading'
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat = 'short'
+    }
+}

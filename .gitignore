@@ -1,0 +1,53 @@
+# Agent workflow & internal report files
+AGENTS.md
+TASKS.md
+docs/qa-report.md
+docs/review-report.md
+
+# Generated frontend static bundle copied by Gradle
+backend/src/main/resources/static/
+
+# Secrets & environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+secrets/
+
+# Gradle & Java
+.gradle/
+build/
+**/build/
+bin/
+**/bin/
+out/
+.classpath
+.project
+.settings/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.war
+*.ear
+hs_err_pid*
+
+# Node & Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+npm-debug.log*
+
+# IDE & OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.log

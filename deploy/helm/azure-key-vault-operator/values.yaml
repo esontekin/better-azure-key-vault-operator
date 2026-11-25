@@ -1,0 +1,153 @@
+# Azure Key Vault Manager — Production Server Helm Values
+# IMPORTANT:
+# - NEVER place real credentials or secrets in this file or commit them to Git.
+# - Azure Service Principal secret and OIDC client secret MUST be stored in SEPARATE
+#   pre-created Kubernetes Secrets (azure.existingSecret and oidc.existingSecret).
+# - Do NOT create a bootstrap circular dependency by fetching azure.existingSecret
+#   from the same Key Vault managed by this operator.
+# - MVP supports strictly single replica (replicaCount: 1) until distributed session
+#   and external audit architecture is introduced.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/example-org/azure-key-vault-operator
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Application runtime profile ("server" required for multi-user Kubernetes deployment)
+profile: "server"
+deleteEnabled: false
+metadataTtl: "5m"
+logLevel: "INFO"
+
+# REQUIRED in server profile: explicit allowlist of Azure Key Vault Resource IDs.
+# Example:
+# allowedVaultIds:
+#   - "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/kv-app-prod"
+allowedVaultIds: []
+
+# Optional: trusted static vault definitions for data-plane-only mode when ARM Reader is not granted.
+# staticVaults:
+#   - resourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/kv-app-prod"
+#     vaultUri: "https://kv-app-prod.vault.azure.net"
+#     environment: "prod"
+staticVaults: []
+
+azure:
+  # Non-secret Azure Entra ID identifiers
+  tenantId: ""
+  clientId: ""
+  # Optional subscription filter for ARM discovery
+  subscriptionId: ""
+  # Pre-created Kubernetes Secret holding ONLY the Azure SP client secret VALUE (not Secret ID).
+  # Mounted read-only at /run/secrets/azure/<secretKey> and referenced via AZURE_CLIENT_SECRET_FILE.
+  existingSecret: ""
+  secretKey: "client-secret"
+
+oidc:
+  # SEPARATE pre-created Kubernetes Secret holding OIDC client credentials (e.g. Ory Hydra).
+  # Must NOT be the same Secret as azure.existingSecret.
+  existingSecret: ""
+  clientIdKey: "client-id"
+  clientSecretKey: "client-secret"
+
+server:
+  # External HTTPS base URL terminated at Ingress/Gateway (required in server mode)
+  publicBaseUrl: ""
+  # Comma-separated CIDRs of trusted reverse proxies / ingress controllers
+  trustedProxies: ""
+  # HTTPS OIDC Issuer URI (e.g. Ory Hydra)
+  oidcIssuerUri: ""
+  # Explicit JSON array mapping OIDC subject/group -> vaultResourceId -> role (VIEWER|OPERATOR|MANAGER|ADMIN)
+  roleMappingsJson: ""
+  groupsClaim: "groups"
+  subjectClaim: "sub"
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false
+
+service:
+  type: ClusterIP
+  port: 8765
+
+# Ingress / Gateway is DISABLED by default. Enable only with TLS termination and trusted proxy CIDR configured.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  #   - host: akv-manager.example.internal
+  #     paths:
+  #       - path: /
+  #         pathType: Prefix
+  tls: []
+  #   - secretName: akv-manager-tls
+  #     hosts:
+  #       - akv-manager.example.internal
+
+networkPolicy:
+  enabled: true
+  # Restrict ingress to your TLS-terminating Ingress/Gateway namespace and pod labels.
+  ingressNamespaceSelector: {}
+  ingressPodSelector: {}
+  # Optional egress CIDR restrictions (empty = allow UDP/TCP 53 and TCP 443 for Azure/OIDC)
+  egressDnsCidrs: []
+  egressHttpsCidrs: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 25
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+tmpVolumeSizeLimit: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
